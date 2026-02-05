@@ -1,0 +1,7 @@
+RewriteEngine On
+# Tell Apache that your API folder is the starting point
+RewriteBase /patient_api/api/
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?request=$1 [QSA,L]
