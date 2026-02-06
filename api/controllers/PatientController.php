@@ -15,47 +15,133 @@ class PatientController
     {
         switch ($method) {
             case 'GET':
-                if ($id) {
-                    $res = $this->patient->getPatientById($id);
-                    $res ? Response::send(true, "Patient found", $res)
-                        : Response::send(false, "Patient not found", [], 404);
-                } else {
-                    Response::send(true, "Patients retrieved", $this->patient->getAllPatients());
+                try {
+                    if ($id) {
+                        $result = $this->patient->getPatientById($id);
+                    } else {
+                        $result = $this->patient->getAllPatients();
+                    }
+
+                    // Check if result is empty
+                    if (!$result) {
+                        Response::send(false, "No patients found", [], 404);
+                    }
+
+                    Response::send(true, "Data retrieved successfully", $result);
+                } catch (Exception $e) {
+                    // Log the error for the developer (optional)
+                    error_log($e->getMessage());
+
+                    // Send a professional error message to the user
+                    Response::send(false, "Server error: Database connection failed", [], 500);
                 }
                 break;
 
             case 'POST':
                 // 1. Check if required fields are present
-                if (empty($data['name']) || empty($data['email'])) {
-                    Response::send(false, "Missing required fields: name and email", [], 400);
-                    break;
+                if (empty($data['name']) || empty($data['age']) || empty($data['phone'])) {
+                    Response::send(false, "Missing required fields", [], 400);
                 }
-                // 2. Attempt creation
-                if ($this->patient->createPatient($data)) {
-                    Response::send(true, "Patient created successfully", [], 201);
-                } else {
-                    Response::send(false, "Failed to create patient. Database error.", [], 500);
+
+                // 2. Validate Age (Must be a positive number)
+                if (!is_numeric($data['age']) || $data['age'] <= 0) {
+                    Response::send(false, "Invalid age. Must be a positive number.", [], 400);
+                }
+
+                // 3. Validate Phone Format (Exactly 10 digits)
+                if (!preg_match('/^[0-9]{10}$/', $data['phone'])) {
+                    Response::send(false, "Invalid phone number. Must be exactly 10 digits.", [], 400);
+                }
+
+                // 4. Check for Duplicate Data (New Feature)
+                if ($this->patient->isDuplicatePhone($data['phone'])) {
+                    Response::send(false, "Phone number already exists. Cannot add duplicate patient.", [], 400);
+                }
+
+                // If all checks pass, proceed to save
+                try {
+                    if ($this->patient->createPatient($data)) {
+                        Response::send(true, "Patient created successfully", [], 201);
+                    } else {
+                        Response::send(false, "Failed to create patient", [], 500);
+                    }
+                } catch (Exception $e) {
+                    // Global Error Handling
+                    Response::send(false, "Server error: " . $e->getMessage(), [], 500);
                 }
                 break;
-
             case 'PUT':
                 if (!$id) {
                     Response::send(false, "ID required for update", [], 400);
-                } elseif (empty($data)) {
-                    Response::send(false, "No data provided for update", [], 400);
-                } elseif ($this->patient->updatePatient($id, $data)) {
-                    Response::send(true, "Patient updated successfully");
-                } else {
-                    Response::send(false, "Update failed. Patient may not exist or no changes made.", [], 404);
+                }
+
+                // 1. Check if all required fields are provided for a full update
+                if (empty($data['name']) || empty($data['age']) || empty($data['phone'])) {
+                    Response::send(false, "All fields (name, age, phone) are required for PUT update", [], 400);
+                }
+
+                try {
+                    // 2. Validate Age (Positive number)
+                    if (!is_numeric($data['age']) || $data['age'] <= 0) {
+                        Response::send(false, "Invalid age. Must be a positive number.", [], 400);
+                    }
+
+                    // 3. Validate Phone Format (10 digits)
+                    if (!preg_match('/^[0-9]{10}$/', $data['phone'])) {
+                        Response::send(false, "Invalid phone number. Must be exactly 10 digits.", [], 400);
+                    }
+
+                    // 4. Duplicate Check (Exclude current ID)
+                    if ($this->patient->isDuplicatePhone($data['phone'], $id)) {
+                        Response::send(false, "This phone number is already assigned to another patient.", [], 400);
+                    }
+
+                    // 5. Execute Update
+                    if ($this->patient->updatePatient($id, $data)) {
+                        Response::send(true, "Patient updated successfully");
+                    } else {
+                        // Update failed usually means no changes were made or ID doesn't exist
+                        Response::send(false, "Update failed. Patient may not exist or no changes made.", [], 404);
+                    }
+                } catch (Exception $e) {
+                    // Global Error Handling for DB issues on Port 3308
+                    Response::send(false, "Server error: " . $e->getMessage(), [], 500);
                 }
                 break;
 
             case 'PATCH':
                 if ($id && !empty($data)) {
-                    if ($this->patient->patchPatient($id, $data)) {
-                        Response::send(true, "Patient partially updated successfully");
-                    } else {
-                        Response::send(false, "Partial update failed", [], 500);
+                    try {
+                        // 1. Phone number validation and duplicate check
+                        if (isset($data['phone'])) {
+                            // Check format (10 digits)
+                            if (!preg_match('/^[0-9]{10}$/', $data['phone'])) {
+                                Response::send(false, "Invalid phone number. Must be exactly 10 digits.", [], 400);
+                            }
+
+                            // Check for duplicate (Exclude current ID)
+                            // Intha line namma update panra number vera yaaru kittayaachum irukkanu check pannum.
+                            if ($this->patient->isDuplicatePhone($data['phone'], $id)) {
+                                Response::send(false, "This phone number is already assigned to another patient.", [], 400);
+                            }
+                        }
+
+                        // 2. Age validation
+                        if (isset($data['age'])) {
+                            if (!is_numeric($data['age']) || $data['age'] <= 0) {
+                                Response::send(false, "Invalid age. Must be a positive number.", [], 400);
+                            }
+                        }
+
+                        // Validation pass aana database-ku anuppuvom
+                        if ($this->patient->patchPatient($id, $data)) {
+                            Response::send(true, "Patient partially updated successfully");
+                        } else {
+                            Response::send(false, "Update failed", [], 500);
+                        }
+                    } catch (Exception $e) {
+                        // Global error handling
+                        Response::send(false, "Server error: " . $e->getMessage(), [], 500);
                     }
                 } else {
                     Response::send(false, "ID and data required", [], 400);

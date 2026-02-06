@@ -64,4 +64,25 @@ class Patient
         $stmt->bind_param("i", $id);
         return $stmt->execute();
     }
+
+    public function isDuplicatePhone($phone, $excludeId = null)
+    {
+        // If $excludeId is provided (for PATCH), we ignore that specific patient's current record
+        $sql = "SELECT id FROM " . $this->table . " WHERE phone = ?";
+        if ($excludeId) {
+            $sql .= " AND id != ?";
+        }
+
+        $stmt = $this->conn->prepare($sql);
+
+        if ($excludeId) {
+            $stmt->bind_param("si", $phone, $excludeId);
+        } else {
+            $stmt->bind_param("s", $phone);
+        }
+
+        $stmt->execute();
+        $result = $stmt->get_result();
+        return $result->num_rows > 0; // Returns true if phone exists
+    }
 }
